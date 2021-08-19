@@ -1,0 +1,159 @@
+﻿@page "/tab"
+@using Microsoft.Extensions.Configuration
+@using System.IO
+@using Microsoft.Graph;
+@using Radzen
+@inject NavigationManager MyNavigationManager
+@inject IConfiguration Configuration
+@inject IJSRuntime jsRuntime
+
+<div class="welcome page" style="margin-top: -200px;">
+    <div class="narrow page-padding">
+        <img src="star.png" />
+        <h1 class="center">
+            Congratulations!
+        </h1>
+
+        
+        <div>
+            <RadzenDataGrid AllowFiltering="true" PageSize="10" AllowPaging="true" AllowSorting="true"
+                            Data="@scoreList" Count="@scoreListCount" LoadData="@LoadData" IsLoading="@scorerListLoading" TItem="UserScore" LogicalFilterOperator="LogicalFilterOperator.Or">
+                <Columns>
+                    <RadzenDataGridColumn TItem="UserScore" Property="UserName" Frozen="true" Title="Name" TextAlign="TextAlign.Center" />
+                    <RadzenDataGridColumn TItem="UserScore" Property="MessageCount" Title="Messages" TextAlign="TextAlign.Center" />
+                    <RadzenDataGridColumn TItem="UserScore" Property="MessageWithSubjectCount" Title="with Subject" TextAlign="TextAlign.Center" />
+                    <RadzenDataGridColumn TItem="UserScore" Property="ReplyCount" Title="Replies" TextAlign="TextAlign.Center" />
+                    <RadzenDataGridColumn TItem="UserScore" Property="ReactionCount" Title="Reactions" TextAlign="TextAlign.Center" />
+                    <RadzenDataGridColumn TItem="UserScore" Property="Score" Title="Score" TextAlign="TextAlign.Center" />
+                </Columns>
+            </RadzenDataGrid>
+        </div>
+
+    </div>
+    <div>
+    </div>
+</div>
+
+
+
+@code {
+    TeamsFx teamsfx;
+    string _clientId, _endpoint;
+
+    public string UserName { get; set; }
+    public string Email { get; set; }
+    public string Title { get; set; }
+    public string UserPhotoUri { get; set; }
+    public bool IsLoading { get; set; }
+    public int TeamCount = 0;
+
+    public Dictionary<string, UserScore> leaderboard = new();
+
+    bool scorerListLoading;
+    List<UserScore> scoreList = new();
+    int scoreListCount = 0;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        try
+        {
+            if (firstRender)
+            {
+                teamsfx = await TeamsFx.CreateTeamsFx(jsRuntime);
+                _clientId = Configuration.GetValue<string>("CLIENT_ID");
+                _endpoint = MyNavigationManager.BaseUri;
+
+                await teamsfx.Init(_clientId, _endpoint, _endpoint);
+
+                var user = await teamsfx.GetInfoAsync();
+
+                UserName = user.DisplayName;
+
+                StateHasChanged();
+            }
+        }
+        catch (Exception) { }
+    }
+
+    async Task LoadData(LoadDataArgs args)
+    {
+        scorerListLoading = true;
+
+        leaderboard.Clear();
+        scoreList.Clear();
+        scoreListCount = 0;
+
+        var graphClient = teamsfx.GetGraphServiceClient();
+        //TODO: don't forget to add the ChannelMessage.Read.All scope to your Azure AD app!
+        //TODO: change that to your sample team and channel id or implement a selction control!
+        string teamID = "df295508-cf2e-4425-a7d7-70116de3249b";
+        string channelID = "19:d3a2518143b64d11bd95e0aefbdcbeb0@thread.tacv2";
+
+        var messages = await graphClient.Teams[teamID]
+                        .Channels[channelID]
+                        .Messages
+                        .Request()
+                        .GetAsync();
+
+        foreach (ChatMessage cm in messages.CurrentPage)
+        {
+            if (cm.Subject != null)
+            {
+                CountScore(cm.From.User.Id, cm.From.User.DisplayName, ScoringModell.CHATMESSAGE_WITH_SUBJECT);
+            }
+            else
+            {
+                CountScore(cm.From.User.Id, cm.From.User.DisplayName, ScoringModell.CHAT_MESSAGE);
+            }
+            foreach (ChatMessageReaction cmr in cm.Reactions)
+            {
+                CountScore(cmr.User.User.Id, cmr.User.User.DisplayName, ScoringModell.REACTION);
+            }
+
+            var replies = await graphClient.Teams[teamID]
+                        .Channels[channelID]
+                        .Messages[cm.Id]
+                        .Replies
+                        .Request()
+                        .GetAsync();
+
+            if (replies != null)
+            {
+                foreach (ChatMessage reply in replies.CurrentPage)
+                {
+                    CountScore(reply.From.User.Id, reply.From.User.DisplayName, ScoringModell.REPLY);
+
+                    foreach (ChatMessageReaction cmr in reply.Reactions)
+                    {
+                        CountScore(cmr.User.User.Id, cmr.User.User.DisplayName, ScoringModell.REACTION);
+                    }
+                }
+            }
+        }
+
+        foreach (UserScore us in leaderboard.Values)
+        {
+            scoreList.Add(us);
+        }
+
+        scoreList = scoreList.OrderByDescending(x => x.Score).ToList();
+
+        scoreListCount = scoreList.Count;
+        scorerListLoading = false;
+    }
+
+    private void CountScore(string id, string displayName, int score)
+    {
+        if (leaderboard.ContainsKey(id))
+        {
+            leaderboard[id].CountScore(score);
+
+            if (leaderboard[id].UserName == null && displayName != null)
+                leaderboard[id].UserName = displayName;
+        }
+        else
+        {
+            leaderboard.Add(id, new UserScore(id, displayName, score));
+        }
+    }
+}
