@@ -14,6 +14,21 @@
             Congratulations!
         </h1>
 
+        <div class="sourceSelection">
+            <div>
+                Team:
+                <RadzenDropDown TValue="Microsoft.Graph.Team" Data="@_teams" TextProperty="DisplayName"
+                        ValueProperty="ID" Change=@(team => OnTeamsDropDownChange(team))>
+        </RadzenDropDown>
+            </div>
+            <div>
+                Channel:
+                <RadzenDropDown TValue="Microsoft.Graph.Channel" Data="@_channels" TextProperty="DisplayName"
+                        ValueProperty="ID" Change=@(channel => OnChannelDropDownChange(channel))>
+        </RadzenDropDown>
+            </div>
+            
+        </div>
         
         <div>
             <RadzenDataGrid AllowFiltering="true" PageSize="10" AllowPaging="true" AllowSorting="true"
@@ -53,6 +68,11 @@
     List<UserScore> scoreList = new();
     int scoreListCount = 0;
 
+    List<Team> _teams;
+    Team _selectedTeam;
+    List<Channel> _channels;
+    Channel _selectedChannel;
+
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         try
@@ -68,6 +88,8 @@
                 var user = await teamsfx.GetInfoAsync();
 
                 UserName = user.DisplayName;
+
+                _teams = await GetTeams();
 
                 StateHasChanged();
             }
@@ -86,8 +108,11 @@
         var graphClient = teamsfx.GetGraphServiceClient();
         //TODO: don't forget to add the ChannelMessage.Read.All scope to your Azure AD app!
         //TODO: change that to your sample team and channel id or implement a selction control!
-        string teamID = "df295508-cf2e-4425-a7d7-70116de3249b";
-        string channelID = "19:d3a2518143b64d11bd95e0aefbdcbeb0@thread.tacv2";
+        @*string teamID = "df295508-cf2e-4425-a7d7-70116de3249b";
+        string channelID = "19:d3a2518143b64d11bd95e0aefbdcbeb0@thread.tacv2";*@
+
+    string teamID = _selectedTeam.Id;
+        string channelID = _selectedChannel.Id;
 
         var messages = await graphClient.Teams[teamID]
                         .Channels[channelID]
@@ -155,5 +180,55 @@
         {
             leaderboard.Add(id, new UserScore(id, displayName, score));
         }
+    }
+
+    async Task<List<Team>> GetTeams()
+    {
+        var graphClient = teamsfx.GetGraphServiceClient();
+
+        var teams = await graphClient
+                .Me
+                .JoinedTeams
+                .Request()
+                .GetAsync();
+            
+            List<Team> result = (List<Team>)teams.CurrentPage;
+            result.Sort((a,b) => a.DisplayName.CompareTo(b.DisplayName));
+
+            return result;
+    }
+
+    async void OnTeamsDropDownChange(object team)
+    {
+        Team selectedTeam = (Team)team;
+
+        _selectedTeam = selectedTeam;
+
+        var graphClient = teamsfx.GetGraphServiceClient();
+
+        var channels = await graphClient
+            .Teams[selectedTeam.Id]
+            .Channels
+            .Request()
+            .GetAsync();
+        List<Channel> result = channels.CurrentPage.ToList<Channel>();
+        result.Sort((a,b) => a.DisplayName.CompareTo(b.DisplayName));
+        _channels = result;
+
+        
+       // teamMembers = await myGraphService.GetMembers(selectedTeam.Id);
+
+        StateHasChanged();
+    }
+
+    async void OnChannelDropDownChange(object channel)
+    {
+        Channel selectedChannel = (Channel)channel;
+        _selectedChannel = selectedChannel;
+        int x = 10;
+        await LoadData(new LoadDataArgs());
+       // teamMembers = await myGraphService.GetMembers(selectedTeam.Id);
+
+        StateHasChanged();
     }
 }

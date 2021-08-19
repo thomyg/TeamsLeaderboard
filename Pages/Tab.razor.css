@@ -85,3 +85,15 @@ code {
 		.profile > .info > p {
 			margin: 0;
 		}
+
+.sourceSelection {
+	display: flex;
+	margin: 1em 0;	
+	width: fit-content;
+	box-shadow: 0px 8px 10px rgba(0, 0, 0, 0.1);
+	border-radius: 3px;
+}
+
+.sourceSelection > div {
+	margin: 10px 10px 10px 10px;
+}
