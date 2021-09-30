@@ -14,25 +14,38 @@
             Congratulations!
         </h1>
 
+        @*Teams and Channel selection*@
         <div class="sourceSelection">
             <div>
-                Team:
-                <RadzenDropDown TValue="Microsoft.Graph.Team" Data="@_teams" TextProperty="DisplayName"
+                <div>
+                    <lable>
+                        Team:
+                    </lable>
+                </div>
+                <div>
+                    <RadzenDropDown TValue="Microsoft.Graph.Team" Data="@_teams" TextProperty="DisplayName"
                         ValueProperty="ID" Change=@(team => OnTeamsDropDownChange(team))>
-        </RadzenDropDown>
+                    </RadzenDropDown>
+                </div>
             </div>
             <div>
-                Channel:
-                <RadzenDropDown TValue="Microsoft.Graph.Channel" Data="@_channels" TextProperty="DisplayName"
+                <div>
+                    <lable>
+                        Channel:
+                    </lable>
+                </div>
+                <div>
+                    <RadzenDropDown TValue="Microsoft.Graph.Channel" Data="@_channels" TextProperty="DisplayName"
                         ValueProperty="ID" Change=@(channel => OnChannelDropDownChange(channel))>
-        </RadzenDropDown>
-            </div>
-            
+                    </RadzenDropDown>
+                </div>
+            </div>            
         </div>
-        
+         
+        @*Teams Leaderboard*@
         <div>
             <RadzenDataGrid AllowFiltering="true" PageSize="10" AllowPaging="true" AllowSorting="true"
-                            Data="@scoreList" Count="@scoreListCount" LoadData="@LoadData" IsLoading="@scorerListLoading" TItem="UserScore" LogicalFilterOperator="LogicalFilterOperator.Or">
+                            Data="@LeaderList" Count="@leaderListCount" LoadData="@LoadScoreData" IsLoading="@leaderListLoading" TItem="UserScore" LogicalFilterOperator="LogicalFilterOperator.Or">
                 <Columns>
                     <RadzenDataGridColumn TItem="UserScore" Property="UserName" Frozen="true" Title="Name" TextAlign="TextAlign.Center" />
                     <RadzenDataGridColumn TItem="UserScore" Property="MessageCount" Title="Messages" TextAlign="TextAlign.Center" />
@@ -43,9 +56,6 @@
                 </Columns>
             </RadzenDataGrid>
         </div>
-
-    </div>
-    <div>
     </div>
 </div>
 
@@ -55,18 +65,12 @@
     TeamsFx teamsfx;
     string _clientId, _endpoint;
 
-    public string UserName { get; set; }
-    public string Email { get; set; }
-    public string Title { get; set; }
-    public string UserPhotoUri { get; set; }
-    public bool IsLoading { get; set; }
-    public int TeamCount = 0;
 
-    public Dictionary<string, UserScore> leaderboard = new();
+    public Dictionary<string, UserScore> UserScores = new();
 
-    bool scorerListLoading;
-    List<UserScore> scoreList = new();
-    int scoreListCount = 0;
+    bool leaderListLoading;
+    List<UserScore> LeaderList = new();
+    int leaderListCount = 0;
 
     List<Team> _teams;
     Team _selectedTeam;
@@ -85,101 +89,13 @@
 
                 await teamsfx.Init(_clientId, _endpoint, _endpoint);
 
-                var user = await teamsfx.GetInfoAsync();
-
-                UserName = user.DisplayName;
-
+                //Load all Teams for the DropDown
                 _teams = await GetTeams();
 
                 StateHasChanged();
             }
         }
         catch (Exception) { }
-    }
-
-    async Task LoadData(LoadDataArgs args)
-    {
-        scorerListLoading = true;
-
-        leaderboard.Clear();
-        scoreList.Clear();
-        scoreListCount = 0;
-
-        var graphClient = teamsfx.GetGraphServiceClient();
-        //TODO: don't forget to add the ChannelMessage.Read.All scope to your Azure AD app!
-        //TODO: change that to your sample team and channel id or implement a selction control!
-        @*string teamID = "df295508-cf2e-4425-a7d7-70116de3249b";
-        string channelID = "19:d3a2518143b64d11bd95e0aefbdcbeb0@thread.tacv2";*@
-
-    string teamID = _selectedTeam.Id;
-        string channelID = _selectedChannel.Id;
-
-        var messages = await graphClient.Teams[teamID]
-                        .Channels[channelID]
-                        .Messages
-                        .Request()
-                        .GetAsync();
-
-        foreach (ChatMessage cm in messages.CurrentPage)
-        {
-            if (cm.Subject != null)
-            {
-                CountScore(cm.From.User.Id, cm.From.User.DisplayName, ScoringModell.CHATMESSAGE_WITH_SUBJECT);
-            }
-            else
-            {
-                CountScore(cm.From.User.Id, cm.From.User.DisplayName, ScoringModell.CHAT_MESSAGE);
-            }
-            foreach (ChatMessageReaction cmr in cm.Reactions)
-            {
-                CountScore(cmr.User.User.Id, cmr.User.User.DisplayName, ScoringModell.REACTION);
-            }
-
-            var replies = await graphClient.Teams[teamID]
-                        .Channels[channelID]
-                        .Messages[cm.Id]
-                        .Replies
-                        .Request()
-                        .GetAsync();
-
-            if (replies != null)
-            {
-                foreach (ChatMessage reply in replies.CurrentPage)
-                {
-                    CountScore(reply.From.User.Id, reply.From.User.DisplayName, ScoringModell.REPLY);
-
-                    foreach (ChatMessageReaction cmr in reply.Reactions)
-                    {
-                        CountScore(cmr.User.User.Id, cmr.User.User.DisplayName, ScoringModell.REACTION);
-                    }
-                }
-            }
-        }
-
-        foreach (UserScore us in leaderboard.Values)
-        {
-            scoreList.Add(us);
-        }
-
-        scoreList = scoreList.OrderByDescending(x => x.Score).ToList();
-
-        scoreListCount = scoreList.Count;
-        scorerListLoading = false;
-    }
-
-    private void CountScore(string id, string displayName, int score)
-    {
-        if (leaderboard.ContainsKey(id))
-        {
-            leaderboard[id].CountScore(score);
-
-            if (leaderboard[id].UserName == null && displayName != null)
-                leaderboard[id].UserName = displayName;
-        }
-        else
-        {
-            leaderboard.Add(id, new UserScore(id, displayName, score));
-        }
     }
 
     async Task<List<Team>> GetTeams()
@@ -211,12 +127,10 @@
             .Channels
             .Request()
             .GetAsync();
+
         List<Channel> result = channels.CurrentPage.ToList<Channel>();
         result.Sort((a,b) => a.DisplayName.CompareTo(b.DisplayName));
         _channels = result;
-
-        
-       // teamMembers = await myGraphService.GetMembers(selectedTeam.Id);
 
         StateHasChanged();
     }
@@ -225,10 +139,105 @@
     {
         Channel selectedChannel = (Channel)channel;
         _selectedChannel = selectedChannel;
-        int x = 10;
-        await LoadData(new LoadDataArgs());
-       // teamMembers = await myGraphService.GetMembers(selectedTeam.Id);
+        
+        //Tell the Leaderboard to go fetch the data
+        await LoadScoreData(new LoadDataArgs());       
 
         StateHasChanged();
     }
+
+    async Task LoadScoreData(LoadDataArgs args)
+    {
+        leaderListLoading = true;
+
+        UserScores.Clear();
+        LeaderList.Clear();
+        leaderListCount = 0;
+
+        var graphClient = teamsfx.GetGraphServiceClient();
+        //TODO: don't forget to add the ChannelMessage.Read.All scope to your Azure AD app!
+        //TODO: change that to your sample team and channel id or use the selction drop downs
+        @*string teamID = "df295508-cf2e-4425-a7d7-70116de3249b";
+        string channelID = "19:d3a2518143b64d11bd95e0aefbdcbeb0@thread.tacv2";*@
+
+        string teamID = _selectedTeam.Id;
+        string channelID = _selectedChannel.Id;
+
+        //Getting chat messages from Channel in Teams
+        var messages = await graphClient.Teams[teamID]
+                        .Channels[channelID]
+                        .Messages
+                        .Request()
+                        .GetAsync();
+        
+        //Calculate points from all messages
+        //add filtering if you only want a certain date range
+        foreach (ChatMessage cm in messages.CurrentPage)
+        {
+            if (cm.Subject != null)
+            {
+                AddScore(cm.From.User.Id, cm.From.User.DisplayName, ScoringModell.CHATMESSAGE_WITH_SUBJECT);
+            }
+            else
+            {
+                AddScore(cm.From.User.Id, cm.From.User.DisplayName, ScoringModell.CHAT_MESSAGE);
+            }
+            foreach (ChatMessageReaction cmr in cm.Reactions)
+            {                
+                AddScore(cmr.User.User.Id, cmr.User.User.DisplayName, ScoringModell.REACTION);
+            }
+
+            //Get all replies of the channel message
+            var replies = await graphClient.Teams[teamID]
+                        .Channels[channelID]
+                        .Messages[cm.Id]
+                        .Replies
+                        .Request()
+                        .GetAsync();
+
+            if (replies != null)
+            {
+                foreach (ChatMessage reply in replies.CurrentPage)
+                {
+                    AddScore(reply.From.User.Id, reply.From.User.DisplayName, ScoringModell.REPLY);
+
+                    foreach (ChatMessageReaction cmr in reply.Reactions)
+                    {
+                        AddScore(cmr.User.User.Id, cmr.User.User.DisplayName, ScoringModell.REACTION);
+                    }
+                }
+            }
+        }
+
+        foreach (UserScore us in UserScores.Values)
+        {
+            LeaderList.Add(us);
+        }
+
+        LeaderList = LeaderList.OrderByDescending(x => x.Score).ToList();
+
+        leaderListCount = LeaderList.Count;
+        leaderListLoading = false;                        
+    }
+
+    private void AddScore(string id, string displayName, int score)
+    {
+        if (UserScores.ContainsKey(id))
+        {
+            UserScores[id].CountScore(score);
+
+            if (UserScores[id].UserName == null && displayName != null)
+                UserScores[id].UserName = displayName;
+        }
+        else
+        {
+            UserScores.Add(id, new UserScore(id, displayName, score));
+        }
+    }
+
+    
+
+    
+
+    
 }
